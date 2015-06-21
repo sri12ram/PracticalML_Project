@@ -1,0 +1,209 @@
+---
+title: "Predicting Weight Lifting Manner"
+author: "Sriram"
+date: "21 June 2015"
+output: html_document
+---
+  
+## Background & Objective  
+  
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit, it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: [http://groupware.les.inf.puc-rio.br/har](http://groupware.les.inf.puc-rio.br/har)(see the section on the Weight Lifting Exercise Dataset).  
+  
+  
+**The goal of this project is to predict the manner in which they did the exercise.**  
+  
+  
+      
+## Process steps undertaken in this project  
+  
+I have outlined below the steps by which I approached this project and wrote the code  
+  
+* Required R libraries are loaded  
+* Read in the provided Training & Validation datasets  
+* Analyze the data and variabes to remove unwanted variables (including NA data)  
+* Clean Data is available now, apply same pre-process / cleaning to the Testing dataset  
+* Sub-Partition the cleaned Training data into one Training dataset and a Validation dataset  
+* Fit a Predictive Model for activity recognition  
+* Estimate the performance of the model on the Validation dataset  
+* Apply the model to the Test dataset  
+* Plot the required graphs
+  
+## Data Cleaning & Pre-processing
+  
+The required R libraries are loaded in R.  
+```{r echo=TRUE, results='hide', warning=FALSE, message=FALSE, cache=TRUE}
+library(caret)
+library(rpart)
+library(rpart.plot)
+library(randomForest)
+library(lattice)
+```
+  
+  
+The provided Training & Test dataset are read in to the dataframes.  
+```{r echo=TRUE, results='hide', cache=TRUE}
+pmlTrain <- read.csv("./data/pml-training.csv")
+pmlTest <- read.csv("./data/pml-testing.csv")
+```
+  
+  
+First, preserve the predictor variable 'classe' in another variable.  Assign NA to blank values.  Remove columns having NA.  Drop other columns that are not required, as they do not contribute much to the measurements.  Finally, add the predictor variable 'classe' back into the Clean Training dataset.  
+  
+Original dataset having 160 variables have been cleaned and reduced to 53 variabes.  Training Dataset contains 19622 observation.  
+```{r echo=TRUE, results='hide', cache=TRUE}
+tmpClasseTrain <- pmlTrain$classe
+tmpPmlTrain <- pmlTrain
+tmpPmlTrain[tmpPmlTrain == ""] <- NA
+tmpPmlTrain <- tmpPmlTrain[ , colSums(is.na(tmpPmlTrain)) == 0]
+colDropTrain <- c("X",
+             "user_name",
+             "raw_timestamp_part_1",         
+             "raw_timestamp_part_2",        
+             "cvtd_timestamp",
+             "new_window",                   
+             "num_window")                 
+cleanTrain <- tmpPmlTrain[ , !(names(tmpPmlTrain) %in% colDropTrain)]
+cleanTrain$classe <- tmpClasseTrain
+```
+  
+  
+Apply to the Test dataset, the same clean-up and pre-processing done on the training dataset as above.  Cleaned Test dataste contains 19622 obervations and 53 variabes.  
+```{r echo=TRUE, results='hide', cache=TRUE}
+## Clean the Testing Data
+tmpClasseTest <- pmlTest$classe
+tmpPmlTest <- pmlTest
+tmpPmlTest[tmpPmlTest == ""] <- NA
+tmpPmlTest <- tmpPmlTest[ , colSums(is.na(tmpPmlTest)) == 0]
+colDropTest <- c("X",
+             "user_name",
+             "raw_timestamp_part_1",         
+             "raw_timestamp_part_2",        
+             "cvtd_timestamp",
+             "new_window",                   
+             "num_window")                 
+cleanTest <- tmpPmlTest[ , !(names(tmpPmlTest) %in% colDropTest)]
+cleanTest$classe <- tmpClasseTest
+```
+  
+  
+Split the Training dataset into a pure Training dataset and a Validation dataset.  Here, I have used 60-40 split.  Set the seed for reproducibiity.  
+```{r, cache=TRUE}
+set.seed(12345)
+inTrain <- createDataPartition(cleanTrain$classe, p = 0.60, list = FALSE)
+trainData <- cleanTrain[inTrain, ]
+validationData <- cleanTrain[-inTrain, ]
+```
+  
+  
+Display the dimenstion of the Raw and Cleaned datasets.  
+```{r echo=TRUE, cache=TRUE}
+dim(pmlTrain)
+dim(cleanTrain)
+dim(pmlTest)
+dim(cleanTest)
+dim(trainData)
+dim(validationData)
+```
+  
+  
+## Model the Data  
+    
+Using *Random Forest* algorithm, fit a predictive model.  _Random Forest_ is used as it automatically selects important variables.  In random forests, there is no need for cross-validation or a separate test set to get an unbiased estimate of the test set error. It is estimated internally during the run.  
+```{r echo=TRUE, warning=FALSE, cache=TRUE}
+controlRF <- trainControl(method = "cv", 5)
+modelFitRF <- train(classe ~ ., 
+                    data = trainData, 
+                    method = "rf", 
+                    trControl = controlRF, 
+                    ntree = 250)
+modelFitRF
+```
+  
+  
+Estimate the performance f the above model on the Validation data.  
+```{r cache=TRUE}
+predictRF <- predict(modelFitRF, validationData)
+confusionMatrix(validationData$classe, predictRF)
+```
+  
+  
+Check the Accuracy and Out of Sample Errors.  
+```{r cache=TRUE}
+accuracy <- postResample(predictRF, validationData$classe)
+accuracy
+outOfSampleError <- 1 - as.numeric(confusionMatrix(validationData$classe, predictRF)$overall[1])
+outOfSampleError
+```
+  
+  
+## Based on the output above, performance with cross-validation is expected to be  
+  
+    
+- Estimated **Accuracy** of the model is **98.88%**  
+- Estimated **Out-of-Sample Error** is **1.12%**  
+  
+  
+```{r cache=TRUE}    
+result <- predict(modelFitRF, cleanTest)
+result
+```
+  
+  
+  
+## Appendix Graphs:  
+  
+#### 1. Correlation Plot  
+    
+```{r cache=TRUE, fig.path='./figure/', fig.width=8, fig.height=8}
+levPlot<- cor(trainData[, -length(names(trainData))])
+levelplot(levPlot, aspect = "fill", scales=list(x=list(rot=90)), main = "Correlation Matrix Plot", xlab = "", ylab = "")
+```
+  
+  
+#### 2. Trees vs. Error Plot  
+    
+The error decreases with the number of trees.  
+  
+```{r cache=TRUE, fig.path='./figure/'}
+plot(modelFitRF$finalModel, main = "Plot of Trees vs. Error")
+```
+  
+  
+#### 3. rpart Tree  
+  
+Sample tree...  
+  
+```{r cache=TRUE, fig.path='./figure/'}
+prp(rpart(classe ~ ., data = trainData))
+```
+  
+  
+  
+## Reference    
+    
+*Below are the references:*  
+* Learnings from [Coursera Practical Machine Learning](http://class.coursera.org/predmachlearn-015/)  
+* Dataset from [http://groupware.les.inf.puc-rio.br/har](http://groupware.les.inf.puc-rio.br/har)  
+  
+
+## Submission of Project  
+    
+Below is the code to create individual files for the answers (for upload to Coursera).  
+```{r eval=FALSE}
+answers <- as.character(result)
+pml_write_files <- function(x) {
+        n = length(x)
+        for(i in 1:n) {
+                filename = paste0("problem_id_", i, ".txt")
+                write.table(x[i], 
+                            file = filename, 
+                            quote = FALSE, 
+                            row.names = FALSE,
+                            col.names = FALSE)
+        }
+}
+
+pml_write_files(answers)
+```
+  
+  
